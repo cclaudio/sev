@@ -145,7 +145,7 @@ pub struct AttestationReport {
     pub plat_info: PlatformInfo,
     /// Private variable as only the first bit is important.
     /// See [author_key_en()](self::AttestationReport::author_key_en).
-    _author_key_en: u32,
+    pub key_info: KeyInfo,
     _reserved_0: u32,
     #[serde(with = "BigArray")]
     /// Guest-provided 512 Bits of Data
@@ -199,12 +199,6 @@ pub struct AttestationReport {
     pub signature: Signature,
 }
 
-impl AttestationReport {
-    fn author_key_en(&self) -> bool {
-        self._author_key_en == 1
-    }
-}
-
 impl Default for AttestationReport {
     fn default() -> Self {
         Self {
@@ -217,7 +211,7 @@ impl Default for AttestationReport {
             sig_algo: Default::default(),
             current_tcb: Default::default(),
             plat_info: Default::default(),
-            _author_key_en: Default::default(),
+            key_info: Default::default(),
             _reserved_0: Default::default(),
             report_data: [0; 64],
             measurement: [0; 48],
@@ -261,7 +255,7 @@ Signature Algorithm:          {}
 Current TCB:
 {}
 {}
-Author Key Encryption:        {}
+Key Signing:                  {}
 Report Data:                  {}
 Measurement:                  {}
 Host Data:                    {}
@@ -293,7 +287,7 @@ Launch TCB:
             self.sig_algo,
             self.current_tcb,
             self.plat_info,
-            self.author_key_en(),
+            self.key_info,
             hexdump(&self.report_data),
             hexdump(&self.measurement),
             hexdump(&self.host_data),
@@ -517,6 +511,56 @@ Platform Info ({}):
             self.ecc_enabled(),
             self.rapl_disabled(),
             self.ciphertext_hiding_enabled(),
+        )
+    }
+}
+
+/// Key used to sign the attestation report
+#[repr(u8)]
+pub enum ReportSigningKey {
+    /// Report signed with the VCEK
+    Vcek = 0,
+    /// Report signed with the VLEK
+    Vlek = 1,
+    /// Report not signed
+    None = 7,
+}
+
+bitfield! {
+    /// Anonymous structure with a bit-field unsigned 32 bit integer:
+    /// Bit 0 indicates if the digest of the author key is present in AUTHOR_KEY_DIGEST.
+    /// Bit 1 represents the value of MaskChipKey.
+    /// Bit 2-4 encodes the key used to sign the report.
+    /// Bit 5-31 reserved.
+    #[repr(C)]
+    #[derive(Default, Deserialize, Clone, Copy, Eq, PartialEq, Serialize)]
+    pub struct KeyInfo(u32);
+    impl Debug;
+    /// AUTHOR_KEY_EN: Indicates the digest of the author key is present in the AUTHOR_KEY_DIGEST
+    pub author_key_enabled, _: 0, 0;
+    /// MASK_CHIP_KEY: The value of MaskChipKey
+    pub mask_chip_key, _: 1, 1;
+    /// SINGING_KEY: (7) None, (2-6) Reserved, (1) VLEK, (0) VCEK
+    pub signing_key, _: 2, 4;
+    /// Reserved
+    pub reserved, _: 5, 31;
+}
+
+impl Display for KeyInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            r#"
+Key Info ({}):          {}
+  Author Key Enabled:   {}
+  Mask Chip Key Value:  {}
+  Signing Key Encoding: {}
+"#,
+            self.0,
+            self.author_key_enabled(),
+            self.mask_chip_key(),
+            self.signing_key(),
+            self.reserved(),
         )
     }
 }
